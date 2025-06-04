@@ -84,30 +84,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filepicker.Height = msg.Height - 8
 		return m, nil
 
-	// Did the user select a file?
-	case filepicker.FileSelectedMsg:
-		m.selectedFile = msg.Path
-		return m, nil
+	}
 
-	// Did the user select a disabled file?
-	case filepicker.FileSelectedDisabledMsg:
-		m.err = fmt.Errorf("file type not allowed: %s", filepath.Ext(msg.Path))
+	// Check if user selected a file using the new API
+	if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+		m.selectedFile = path
+		return m, nil
+	}
+
+	// Check if user selected a disabled file
+	if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
+		m.err = fmt.Errorf("file type not allowed: %s", filepath.Ext(path))
 		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.filepicker, cmd = m.filepicker.Update(msg)
-
-	// Did the user select a file?
-	if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
-		m.selectedFile = path
-	}
-
-	// Did the user select a disabled file?
-	if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
-		m.err = fmt.Errorf("file type not allowed: %s", filepath.Ext(path))
-	}
-
 	return m, cmd
 }
 

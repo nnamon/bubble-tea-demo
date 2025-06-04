@@ -12,17 +12,35 @@ import (
 	"github.com/yourusername/bubbletea-showcase/common"
 )
 
+// Character bitmap definition
+type charBitmap []string
+
+// Color mode configuration  
+type colorMode struct {
+	name   string
+	colors []string
+}
+
 type model struct {
-	width      int
-	height     int
+	// Display properties
+	width  int
+	height int
+	grid   [][]string // Grid-based rendering for performance
+	
+	// Animation state
 	time       float64
+	frame      int
 	scrollPos  float64
 	waveHeight float64
 	speed      float64
+	paused     bool
+	
+	// Content and configuration
 	message    string
 	font       int
 	colorMode  int
-	paused     bool
+	modes      []colorMode
+	bitmaps    map[rune]charBitmap
 }
 
 type tickMsg time.Time
@@ -34,7 +52,7 @@ func tick() tea.Cmd {
 }
 
 func initialModel() model {
-	return model{
+	m := model{
 		width:      80,
 		height:     24,
 		waveHeight: 3.0,
@@ -42,6 +60,76 @@ func initialModel() model {
 		message:    "DEMOSCENE GREETINGS! * BUBBLE TEA SHOWCASE * TERMINAL GRAPHICS RULE * ",
 		font:       0,
 		colorMode:  0,
+		modes: []colorMode{
+			{name: "Rainbow Wave", colors: []string{"#FF0000", "#FF8000", "#FFFF00", "#00FF00", "#0080FF", "#8000FF"}},
+			{name: "Fire", colors: []string{"#FF0000", "#FF4000", "#FF8000", "#FFFF00"}},
+			{name: "Matrix", colors: []string{"#004000", "#008000", "#00C000", "#00FF00"}},
+			{name: "Plasma", colors: []string{"#FF0080", "#8000FF", "#0080FF", "#00FF80", "#80FF00"}},
+		},
+		bitmaps: initBitmaps(),
+	}
+	m.initGrid()
+	return m
+}
+
+// Initialize grid for efficient rendering
+func (m *model) initGrid() {
+	m.grid = make([][]string, m.height)
+	for i := range m.grid {
+		m.grid[i] = make([]string, m.width)
+		for j := range m.grid[i] {
+			m.grid[i][j] = " "
+		}
+	}
+}
+
+// Pre-calculate all character bitmaps for performance
+func initBitmaps() map[rune]charBitmap {
+	return map[rune]charBitmap{
+		'A': {"01110", "10001", "11111", "10001", "10001"},
+		'B': {"11110", "10001", "11110", "10001", "11110"},
+		'C': {"01111", "10000", "10000", "10000", "01111"},
+		'D': {"11110", "10001", "10001", "10001", "11110"},
+		'E': {"11111", "10000", "11110", "10000", "11111"},
+		'F': {"11111", "10000", "11110", "10000", "10000"},
+		'G': {"01111", "10000", "10011", "10001", "01111"},
+		'H': {"10001", "10001", "11111", "10001", "10001"},
+		'I': {"11111", "00100", "00100", "00100", "11111"},
+		'J': {"11111", "00010", "00010", "10010", "01100"},
+		'K': {"10010", "10100", "11000", "10100", "10010"},
+		'L': {"10000", "10000", "10000", "10000", "11111"},
+		'M': {"10001", "11011", "10101", "10001", "10001"},
+		'N': {"10001", "11001", "10101", "10011", "10001"},
+		'O': {"01110", "10001", "10001", "10001", "01110"},
+		'P': {"11110", "10001", "11110", "10000", "10000"},
+		'Q': {"01110", "10001", "10101", "10010", "01101"},
+		'R': {"11110", "10001", "11110", "10010", "10001"},
+		'S': {"01111", "10000", "01110", "00001", "11110"},
+		'T': {"11111", "00100", "00100", "00100", "00100"},
+		'U': {"10001", "10001", "10001", "10001", "01110"},
+		'V': {"10001", "10001", "10001", "01010", "00100"},
+		'W': {"10001", "10001", "10101", "11011", "10001"},
+		'X': {"10001", "01010", "00100", "01010", "10001"},
+		'Y': {"10001", "10001", "01010", "00100", "00100"},
+		'Z': {"11111", "00010", "00100", "01000", "11111"},
+		' ': {"00000", "00000", "00000", "00000", "00000"},
+		'*': {"00100", "10101", "01110", "10101", "00100"},
+		'!': {"00100", "00100", "00100", "00000", "00100"},
+		'.': {"00000", "00000", "00000", "00000", "00100"},
+		',': {"00000", "00000", "00000", "00100", "01000"},
+		'?': {"01110", "10001", "00110", "00000", "00100"},
+		'-': {"00000", "00000", "11111", "00000", "00000"},
+		'+': {"00000", "00100", "01110", "00100", "00000"},
+		'0': {"01110", "10001", "10001", "10001", "01110"},
+		'1': {"00100", "01100", "00100", "00100", "01110"},
+		'2': {"01110", "10001", "00110", "01000", "11111"},
+		'3': {"01110", "10001", "00110", "10001", "01110"},
+		'4': {"10001", "10001", "11111", "00001", "00001"},
+		'5': {"11111", "10000", "11110", "00001", "11110"},
+		'6': {"01110", "10000", "11110", "10001", "01110"},
+		'7': {"11111", "00001", "00010", "00100", "01000"},
+		'8': {"01110", "10001", "01110", "10001", "01110"},
+		'9': {"01110", "10001", "01111", "00001", "01110"},
 	}
 }
 
@@ -54,13 +142,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height - 4
+		m.initGrid()
 		return m, nil
 
 	case tickMsg:
 		if !m.paused {
-			m.time += 0.1
-			m.scrollPos += 0.5 * m.speed
-			if m.scrollPos > float64(len(m.message)*8) {
+			m.frame++
+			m.time += 0.05 * m.speed
+			
+			// Update scroll position with smooth movement
+			m.scrollPos += 0.8 * m.speed
+			
+			// Reset when message completely scrolls off screen
+			messageWidth := float64(len(m.message) * 6) // 5 chars + 1 space per character
+			if m.scrollPos > messageWidth + float64(m.width) {
 				m.scrollPos = -float64(m.width)
 			}
 		}
@@ -74,29 +169,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.paused = !m.paused
 		case "r":
 			m.time = 0
+			m.frame = 0
 			m.scrollPos = -float64(m.width)
-		case "1":
-			m.font = 0 // Block
-		case "2":
-			m.font = 1 // Outline
-		case "3":
-			m.font = 2 // Dotted
-		case "4":
-			m.colorMode = 0 // Rainbow wave
-		case "5":
-			m.colorMode = 1 // Fire
-		case "6":
-			m.colorMode = 2 // Matrix
-		case "7":
-			m.colorMode = 3 // Plasma
+		case "1", "2", "3":
+			newFont := int(msg.String()[0] - '1')
+			if newFont >= 0 && newFont < 3 {
+				m.font = newFont
+			}
+		case "4", "5", "6", "7":
+			newMode := int(msg.String()[0] - '4')
+			if newMode < len(m.modes) {
+				m.colorMode = newMode
+			}
 		case "up":
-			m.speed = math.Min(m.speed+0.2, 3.0)
+			m.speed = common.Clamp(m.speed+0.2, 0.1, 4.0)
 		case "down":
-			m.speed = math.Max(m.speed-0.2, 0.1)
+			m.speed = common.Clamp(m.speed-0.2, 0.1, 4.0)
 		case "left":
-			m.waveHeight = math.Max(m.waveHeight-0.5, 0.5)
+			m.waveHeight = common.Clamp(m.waveHeight-0.5, 0.0, 8.0)
 		case "right":
-			m.waveHeight = math.Min(m.waveHeight+0.5, 8.0)
+			m.waveHeight = common.Clamp(m.waveHeight+0.5, 0.0, 8.0)
 		}
 	}
 
@@ -112,374 +204,159 @@ func (m model) View() string {
 
 	title := titleStyle.Render("📜 Demoscene Scroller")
 
-	// Status
+	// Status with enhanced information
 	statusStyle := lipgloss.NewStyle().Foreground(common.Green)
 	fonts := []string{"Block", "Outline", "Dotted"}
-	colors := []string{"Rainbow", "Fire", "Matrix", "Plasma"}
 	status := statusStyle.Render(fmt.Sprintf(
 		"Font: %s | Color: %s | Speed: %.1f | Wave: %.1f | %s",
-		fonts[m.font], colors[m.colorMode], m.speed, m.waveHeight,
-		map[bool]string{true: "⏸ Paused", false: "📜 Scrolling"}[m.paused],
+		fonts[m.font], m.modes[m.colorMode].name, m.speed, m.waveHeight,
+		map[bool]string{true: "⏸ PAUSED", false: "📜 SCROLLING"}[m.paused],
 	))
 
-	// Render scroller
-	lines := m.renderScroller()
+	// Check minimum size requirements
+	minWidth, minHeight := 60, 12
+	if m.width < minWidth || m.height < minHeight {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF0000")).
+			Bold(true)
+		
+		sizeError := errorStyle.Render(fmt.Sprintf(
+			"Terminal too small!\nMinimum size: %dx%d\nCurrent size: %dx%d\n\nPlease resize your terminal window.",
+			minWidth, minHeight+4, m.width, m.height+4,
+		))
+		
+		helpStyle := lipgloss.NewStyle().Faint(true)
+		help := helpStyle.Render("[q]uit")
 
-	// Help
+		return lipgloss.JoinVertical(lipgloss.Left, title, status, "", sizeError, help)
+	}
+
+	// Render the complete scroller using grid-based approach
+	scene := m.renderCompleteScroller()
+
+	// Enhanced help
 	helpStyle := lipgloss.NewStyle().Faint(true)
 	help := helpStyle.Render(
 		"[1-3] fonts • [4-7] colors • [↑↓] speed • [←→] wave • [space] pause • [r]eset • [q]uit",
 	)
 
-	return fmt.Sprintf("%s\n%s\n\n%s\n%s",
-		title, status, strings.Join(lines, "\n"), help)
+	return lipgloss.JoinVertical(lipgloss.Left, title, status, "", scene, help)
 }
 
-func (m model) renderScroller() []string {
-	lines := make([]string, m.height)
-	
-	// Initialize all lines
-	for i := range lines {
-		lines[i] = strings.Repeat(" ", m.width)
-	}
-
-	// Calculate text position
-	textY := m.height / 2
-	textStartX := int(-m.scrollPos)
-
-	// Render each character of the message
-	for charIndex, char := range m.message {
-		charX := textStartX + charIndex*8
-
-		// Only render if character is potentially visible
-		if charX > -8 && charX < m.width+8 {
-			m.renderCharacter(lines, char, charX, textY, charIndex)
+// Grid-based rendering for optimal performance
+func (m model) renderCompleteScroller() string {
+	// Clear the grid
+	for y := 0; y < m.height; y++ {
+		for x := 0; x < m.width; x++ {
+			m.grid[y][x] = " "
 		}
 	}
-
-	return lines
+	
+	// Render scrolling text to grid
+	m.renderScrollingText()
+	
+	// Convert grid to string with styling
+	return m.gridToString()
 }
 
-func (m model) renderCharacter(lines []string, char rune, startX, centerY, charIndex int) {
-	// Get the bitmap for this character
-	bitmap := m.getCharacterBitmap(char)
+// Render scrolling text using efficient grid-based approach
+func (m *model) renderScrollingText() {
+	centerY := m.height / 2
+	textStartX := int(-m.scrollPos)
 	
-	for y := 0; y < len(bitmap); y++ {
+	// Render each character of the message
+	for charIndex, char := range m.message {
+		charX := textStartX + charIndex*6 // 5 char width + 1 space
+		
+		// Only render if character is potentially visible
+		if charX > -6 && charX < m.width+6 {
+			m.renderCharacterToGrid(char, charX, centerY, charIndex)
+		}
+	}
+}
+
+// Render a single character to the grid using bitmap font
+func (m *model) renderCharacterToGrid(char rune, startX, centerY, charIndex int) {
+	// Get bitmap, fallback to default if not found
+	bitmap, exists := m.bitmaps[char]
+	if !exists {
+		// Fallback to a simple block pattern
+		bitmap = charBitmap{"11111", "10001", "10001", "10001", "11111"}
+	}
+	
+	bitmapHeight := len(bitmap)
+	startY := centerY - bitmapHeight/2
+	
+	for y := 0; y < bitmapHeight; y++ {
 		for x := 0; x < len(bitmap[y]); x++ {
 			if bitmap[y][x] == '1' {
 				screenX := startX + x
-				screenY := centerY - len(bitmap)/2 + y
-
+				screenY := startY + y
+				
 				// Apply sine wave effect
-				waveOffset := math.Sin(float64(screenX)*0.1 + m.time*2) * m.waveHeight
-				screenY += int(waveOffset)
-
-				// Check bounds
-				if screenX >= 0 && screenX < m.width && screenY >= 0 && screenY < m.height {
-					char, color := m.getStyledCharacter(screenX, screenY, charIndex)
-					
-					// Replace character in line
-					line := []rune(lines[screenY])
-					if screenX < len(line) {
-						style := lipgloss.NewStyle().Foreground(color)
-						styledChar := style.Render(string(char))
-						
-						// Replace the character at this position
-						lineStr := string(line[:screenX]) + styledChar + string(line[screenX+1:])
-						lines[screenY] = lineStr
-					}
+				waveOffset := math.Sin(float64(screenX)*0.08 + m.time*2.5) * m.waveHeight
+				finalY := screenY + int(waveOffset)
+				
+				// Check bounds and render
+				if screenX >= 0 && screenX < m.width && finalY >= 0 && finalY < m.height {
+					char, color := m.getStyledCharacter(screenX, finalY, charIndex)
+					m.grid[finalY][screenX] = m.styleChar(string(char), color)
 				}
 			}
 		}
 	}
 }
 
-func (m model) getCharacterBitmap(char rune) []string {
-	// Simple 7x5 bitmap font
-	switch char {
-	case 'A':
-		return []string{
-			"01110",
-			"10001",
-			"11111",
-			"10001",
-			"10001",
-		}
-	case 'B':
-		return []string{
-			"11110",
-			"10001",
-			"11110",
-			"10001",
-			"11110",
-		}
-	case 'C':
-		return []string{
-			"01111",
-			"10000",
-			"10000",
-			"10000",
-			"01111",
-		}
-	case 'D':
-		return []string{
-			"11110",
-			"10001",
-			"10001",
-			"10001",
-			"11110",
-		}
-	case 'E':
-		return []string{
-			"11111",
-			"10000",
-			"11110",
-			"10000",
-			"11111",
-		}
-	case 'F':
-		return []string{
-			"11111",
-			"10000",
-			"11110",
-			"10000",
-			"10000",
-		}
-	case 'G':
-		return []string{
-			"01111",
-			"10000",
-			"10011",
-			"10001",
-			"01111",
-		}
-	case 'H':
-		return []string{
-			"10001",
-			"10001",
-			"11111",
-			"10001",
-			"10001",
-		}
-	case 'I':
-		return []string{
-			"11111",
-			"00100",
-			"00100",
-			"00100",
-			"11111",
-		}
-	case 'L':
-		return []string{
-			"10000",
-			"10000",
-			"10000",
-			"10000",
-			"11111",
-		}
-	case 'M':
-		return []string{
-			"10001",
-			"11011",
-			"10101",
-			"10001",
-			"10001",
-		}
-	case 'N':
-		return []string{
-			"10001",
-			"11001",
-			"10101",
-			"10011",
-			"10001",
-		}
-	case 'O':
-		return []string{
-			"01110",
-			"10001",
-			"10001",
-			"10001",
-			"01110",
-		}
-	case 'P':
-		return []string{
-			"11110",
-			"10001",
-			"11110",
-			"10000",
-			"10000",
-		}
-	case 'R':
-		return []string{
-			"11110",
-			"10001",
-			"11110",
-			"10010",
-			"10001",
-		}
-	case 'S':
-		return []string{
-			"01111",
-			"10000",
-			"01110",
-			"00001",
-			"11110",
-		}
-	case 'T':
-		return []string{
-			"11111",
-			"00100",
-			"00100",
-			"00100",
-			"00100",
-		}
-	case 'U':
-		return []string{
-			"10001",
-			"10001",
-			"10001",
-			"10001",
-			"01110",
-		}
-	case 'W':
-		return []string{
-			"10001",
-			"10001",
-			"10101",
-			"11011",
-			"10001",
-		}
-	case 'Y':
-		return []string{
-			"10001",
-			"10001",
-			"01010",
-			"00100",
-			"00100",
-		}
-	case ' ':
-		return []string{
-			"00000",
-			"00000",
-			"00000",
-			"00000",
-			"00000",
-		}
-	case '*':
-		return []string{
-			"00100",
-			"10101",
-			"01110",
-			"10101",
-			"00100",
-		}
-	case '!':
-		return []string{
-			"00100",
-			"00100",
-			"00100",
-			"00000",
-			"00100",
-		}
-	default:
-		// Default to a block for unknown characters
-		return []string{
-			"11111",
-			"10001",
-			"10001",
-			"10001",
-			"11111",
-		}
-	}
-}
-
+// Get styled character and color based on current configuration
 func (m model) getStyledCharacter(x, y, charIndex int) (rune, lipgloss.Color) {
+	// Character selection based on font
 	var char rune
 	switch m.font {
-	case 0: // Block
-		char = '█'
-	case 1: // Outline
-		char = '▓'
-	case 2: // Dotted
-		char = '●'
-	default:
-		char = '█'
+	case 0: char = '█' // Block
+	case 1: char = '▓' // Outline
+	case 2: char = '●' // Dotted
+	default: char = '█'
 	}
-
-	var color lipgloss.Color
+	
+	// Color calculation based on mode
+	var colorIntensity float64
 	switch m.colorMode {
-	case 0: // Rainbow wave
-		hue := float64(x+charIndex*20) * 0.05 + m.time
-		color = m.getRainbowColor(hue)
+	case 0: // Rainbow Wave
+		colorIntensity = math.Mod(float64(x+charIndex*20)*0.05 + m.time, 1.0)
 	case 1: // Fire
-		intensity := math.Sin(float64(x)*0.1 + m.time*2) * 0.5 + 0.5
-		color = m.getFireColor(intensity)
+		colorIntensity = (math.Sin(float64(x)*0.1 + m.time*2) + 1) / 2
 	case 2: // Matrix
-		intensity := math.Sin(float64(y)*0.2 + m.time*3) * 0.5 + 0.5
-		color = m.getMatrixColor(intensity)
+		colorIntensity = (math.Sin(float64(y)*0.2 + m.time*3) + 1) / 2
 	case 3: // Plasma
 		plasma := math.Sin(float64(x)*0.1) + math.Sin(float64(y)*0.15) + math.Sin(m.time*2)
-		color = m.getPlasmaColor((plasma + 3) / 6)
+		colorIntensity = (plasma + 3) / 6
 	default:
-		color = lipgloss.Color("#FFFFFF")
+		colorIntensity = 1.0
 	}
-
+	
+	color := m.getColorFromIntensity(colorIntensity)
 	return char, color
 }
 
-func (m model) getRainbowColor(hue float64) lipgloss.Color {
-	phase := math.Mod(hue, 6)
-	if phase < 1 {
-		return lipgloss.Color("#FF0000")
-	} else if phase < 2 {
-		return lipgloss.Color("#FF8000")
-	} else if phase < 3 {
-		return lipgloss.Color("#FFFF00")
-	} else if phase < 4 {
-		return lipgloss.Color("#00FF00")
-	} else if phase < 5 {
-		return lipgloss.Color("#0080FF")
-	} else {
-		return lipgloss.Color("#8000FF")
-	}
+// Get color from intensity using current color mode
+func (m model) getColorFromIntensity(intensity float64) lipgloss.Color {
+	colors := m.modes[m.colorMode].colors
+	index := common.Clamp(intensity * float64(len(colors)-1), 0, float64(len(colors)-1))
+	return lipgloss.Color(colors[int(index)])
 }
 
-func (m model) getFireColor(intensity float64) lipgloss.Color {
-	if intensity < 0.3 {
-		return lipgloss.Color("#FF0000")
-	} else if intensity < 0.6 {
-		return lipgloss.Color("#FF4000")
-	} else if intensity < 0.8 {
-		return lipgloss.Color("#FF8000")
-	} else {
-		return lipgloss.Color("#FFFF00")
+// Convert grid to styled string
+func (m model) gridToString() string {
+	lines := make([]string, m.height)
+	for y := 0; y < m.height; y++ {
+		lines[y] = strings.Join(m.grid[y], "")
 	}
+	return strings.Join(lines, "\n")
 }
 
-func (m model) getMatrixColor(intensity float64) lipgloss.Color {
-	if intensity < 0.3 {
-		return lipgloss.Color("#004000")
-	} else if intensity < 0.6 {
-		return lipgloss.Color("#008000")
-	} else if intensity < 0.8 {
-		return lipgloss.Color("#00C000")
-	} else {
-		return lipgloss.Color("#00FF00")
-	}
-}
-
-func (m model) getPlasmaColor(value float64) lipgloss.Color {
-	if value < 0.2 {
-		return lipgloss.Color("#FF0080")
-	} else if value < 0.4 {
-		return lipgloss.Color("#8000FF")
-	} else if value < 0.6 {
-		return lipgloss.Color("#0080FF")
-	} else if value < 0.8 {
-		return lipgloss.Color("#00FF80")
-	} else {
-		return lipgloss.Color("#80FF00")
-	}
+// Helper function to style characters
+func (m model) styleChar(char string, color lipgloss.Color) string {
+	return lipgloss.NewStyle().Foreground(color).Render(char)
 }
 
 func main() {

@@ -82,9 +82,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.paused = !m.paused
 		case "r":
 			m.time = 0
+			oldWidth, oldHeight := m.width, m.height
 			m = initialModel()
-			m.width = msg.Width
-			m.height = msg.Height - 4
+			m.width = oldWidth
+			m.height = oldHeight
 		case "1":
 			m.colorMode = 0 // Classic
 		case "2":
